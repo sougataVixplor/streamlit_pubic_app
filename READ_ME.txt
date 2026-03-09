@@ -6,9 +6,8 @@ HOW TO RUN:
 2. Run App: streamlit run streamlit_app.py
 
 FEATURES:
-- Choose between Weaviate and Gemini AI from the sidebar.
 - Upload PDF directly for Gemini.
-- Edit Prompts on the right-side panel. Prompts are saved to prompts.json.
+- Edit Prompts on the left-side panel. Prompts are saved to prompts.json.
 
 USAGE:
 1. Select AI Model.
@@ -21,5 +20,4 @@ USAGE:
 FILES:
 - streamlit_app.py: Main application.
 - prompts.json: Editable prompts.
-- agent.py: Weaviate logic.
 - gemini.py: Gemini logic.

@@ -1,0 +1,51 @@
+{
+    "toc_prompt": {
+        "prompt": "Analyze the provided door, frame, or hardware catalogue and pricebook. Extract all the different series names available in the document along with their corresponding page numbers (this information is usually found in the index or table of contents). Return the extracted data strictly in the following JSON format:",
+        "example": [
+            {
+                "SERIES": "series_name_1",
+                "PAGE": "page_number_1"
+            },
+            {
+                "SERIES": "series_name_2",
+                "PAGE": "page_number_2"
+            }
+        ]
+    },
+    "base_parameter_prompt": {
+        "prompt": "Analyze the {series_name} series from the provided PDF to locate its base price table. \n(Base price means the price of the core configuration of a product for the selected series.)\nYour task is to extract the core configuration/specification parameters from this base price table, along with all possible/available options for each parameter. \nWhen extracting these parameters, group and consolidate them intelligently to simplify the data hierarchy, reduce redundancy or confusion in the data, and carefully maintain any interdependencies between parameters and their options.\nReturn the result strictly in the following JSON format:",
+        "example": {
+            "Parameter_1": [
+                "Option_1",
+                "Option_2"
+            ],
+            "Parameter_2": [
+                "Option_1",
+                "Option_2"
+            ]
+        }
+    },
+    "additional_parameter_prompt": {
+        "prompt": "Analyze the {series_name} series from the provided PDF to locate its additional price table. \n(Additional price means the price of the additional configuration of a product for the selected series.)\nYour task is to extract the additional configuration/specification parameters from this additional price table, along with all possible/available options for each parameter. \nWhen extracting these parameters, group and consolidate them intelligently to simplify the data hierarchy, reduce redundancy or confusion in the data, and carefully maintain any interdependencies between parameters and their options.\nReturn the result strictly in the following JSON format:",
+        "example": {
+            "Additional_Parameter_1": [
+                "Option_1",
+                "Option_2"
+            ],
+            "Additional_Parameter_2": [
+                "Option_1",
+                "Option_2"
+            ]
+        }
+    },
+    "price_prompt": {
+        "prompt": "Analyze the {series} Series price table and detailed information from the PDF.\nne the price for the selected core configuration/specification.\nCrucial Step: Before calculating the price, verify if the selected configuration is a valid specification depending on the rules, interdependencies, and information provided in the PDF pages for the selected series.\nConditions/Selected Configuration:\n{selection}\nOutput Format (Strict JSON):",
+        "example": [
+            {
+                "is_valid": true,
+                "price": "calculated_price_here",
+                "reason": "If is_valid is false, explain why the configuration is invalid based on the PDF. If valid, leave empty."
+            }
+        ]
+    }
+}

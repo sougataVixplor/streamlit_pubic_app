@@ -6,34 +6,25 @@ import httpx
 import json
 
 
-gemini_key=os.environ["GEMINI_API_KEY"]
-
-client = genai.Client(api_key=gemini_key)
+client = genai.Client(api_key="AIzaSyBUuHznqkOzK4yrNiqFnVsbj-EIf3Zbfco")
 
 # Retrieve and encode the PDF byte
-
-
-def upload_pdf(file_path):
-    
-    file_path = pathlib.Path(file_path)
-
+def upload_pdf(file):
     # Upload the PDF using the File API
     sample_file = client.files.upload(
-  file=file_path,
+        file=file,
     )
     return sample_file
 
 def get_gemini_response(sample_file, query):
     response = client.models.generate_content(
-    model="gemini-2.5-flash",
-    contents=[sample_file, query],
-    config=types.GenerateContentConfig(
-        response_mime_type= 'application/json'
-        # system_instruction='you are a story teller for kids under 5 years old',
-    ))
-    print(response.text)
-    json_data=json.loads(response.text)
-    return json_data
+        model="gemini-2.5-flash",
+        contents=[sample_file, query],
+        config=types.GenerateContentConfig(
+            response_mime_type= 'application/json'
+        )
+    )
+    return json.loads(response.text)
 
 
     

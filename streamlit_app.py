@@ -1,206 +1,197 @@
 import streamlit as st
-import time
-import tempfile
-import os
 import json
-
-from agent import get_final_data as get_weaviate_data
+import os
+import tempfile
 from gemini import upload_pdf, get_gemini_response
 
-# ------------------------
-# Configuration & Setup
-# ------------------------
-st.set_page_config(layout="wide") # Use wide mode for better column layout
+# Page configuration
+st.set_page_config(page_title="Pricebook AI", page_icon="📖", layout="wide")
 
-PROMPTS_FILE = "prompts.json"
+# Custom CSS for premium look
+st.markdown("""
+    <style>
+    .main {
+        background-color: #0e1117;
+        color: #ffffff;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        background-color: #262730;
+        color: white;
+        border: 1px solid #4b4b4b;
+    }
+    .stButton>button:hover {
+        background-color: #3d3f4b;
+        border-color: #ff4b4b;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-def load_prompts():
-    if os.path.exists(PROMPTS_FILE):
-        with open(PROMPTS_FILE, "r") as f:
-            return json.load(f)
-    return {}
+# Initialize session state
+if 'upload_completed' not in st.session_state:
+    st.session_state.upload_completed = False
+if 'sample_file' not in st.session_state:
+    st.session_state.sample_file = None
+if 'series_data' not in st.session_state:
+    st.session_state.series_data = None
+if 'current_prompts' not in st.session_state:
+    if os.path.exists('prompt.json'):
+        with open('prompt.json', 'r') as f:
+            st.session_state.current_prompts = json.load(f)
 
-def save_prompts(prompts):
-    with open(PROMPTS_FILE, "w") as f:
-        json.dump(prompts, f, indent=4)
+st.title("📖 Pricebook AI")
+st.subheader("Dynamic Series Extractor")
 
+# Sidebar: Prompt Configuration
+with st.sidebar:
+    st.header("⚙️ Prompt Configuration")
+    with st.expander("Edit Prompts", expanded=False):
+        temp_prompts = {}
+        for key, value in st.session_state.current_prompts.items():
+            st.markdown(f"**{key.replace('_', ' ').title()}**")
+            p_text = st.text_area(f"Prompt", value=value['prompt'], key=f"edit_p_{key}", height=150)
+            e_json = st.text_area(f"Example (JSON)", value=json.dumps(value['example'], indent=2), key=f"edit_e_{key}", height=150)
+            
+            try:
+                temp_prompts[key] = {
+                    "prompt": p_text,
+                    "example": json.loads(e_json)
+                }
+            except json.JSONDecodeError:
+                st.error(f"Invalid JSON in {key} example")
+                temp_prompts[key] = value # Revert to current if invalid
 
-# Load prompts into session state if not present
-if "prompts" not in st.session_state:
-    st.session_state.prompts = load_prompts()
-
-# ------------------------
-# Streamlit UI Layout
-# ------------------------
-
-# Main Layout: Left (App) and Right (Prompt Editor)
-col1, col2 = st.columns([0.7, 0.3])
-
-# --- RIGHT COLUMN: Prompt Editor ---
-with col2:
-    st.header("📝 Prompt Editor")
-    with st.expander("Edit Prompts", expanded=True):
-        
-        # Series Index Prompt
-        new_index_prompt = st.text_area("Index Prompt", value=st.session_state.prompts.get("prompt_index", ""), height=150)
-        
-        # Options Identification Prompt
-        st.info("Variables: `{series_name}`")
-        new_test_prompt = st.text_area("Options Prompt", value=st.session_state.prompts.get("prompt_test", ""), height=150)
-        
-        # Price Extraction Prompt
-        st.info("Variables: `{series}`, `{selection}`")
-        new_price_prompt = st.text_area("Price Prompt", value=st.session_state.prompts.get("price_prompt", ""), height=150)
-        
-        if st.button("💾 Save Prompts"):
-            st.session_state.prompts["prompt_index"] = new_index_prompt
-            st.session_state.prompts["prompt_test"] = new_test_prompt
-            st.session_state.prompts["price_prompt"] = new_price_prompt
-            save_prompts(st.session_state.prompts)
-            st.success("Prompts Saved!")
-            time.sleep(1)
+        if st.button("Save & Update Prompts"):
+            st.session_state.current_prompts = temp_prompts
+            # Persist to file
+            with open('prompt.json', 'w') as f:
+                json.dump(temp_prompts, f, indent=4)
+            st.success("Prompts updated and saved!")
             st.rerun()
 
+    if st.button("Start Over"):
+        st.session_state.upload_completed = False
+        st.session_state.sample_file = None
+        st.session_state.series_data = None
+        st.session_state.base_parameters = None
+        st.session_state.additional_parameters = None
+        st.rerun()
 
-# --- LEFT COLUMN: Main App ---
-with col1:
-    st.title("Pricebook Data Extraction Using AI")
-
-    # Sidebar for Model Selection (Global)
-    st.sidebar.header("Configuration")
-    model_choice = st.sidebar.radio("Select AI Model", ("Weaviate", "Gemini"))
-
-    pdf_file_obj = None
-
-    if model_choice == "Gemini":
-        uploaded_file = st.sidebar.file_uploader("Upload Pricebook PDF", type=["pdf"])
-        
-        if uploaded_file is not None:
-            # Check if we already processed this file
-            if "last_uploaded_filename" not in st.session_state or st.session_state.last_uploaded_filename != uploaded_file.name:
-                # New file uploaded or first time upload
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_path = tmp_file.name
-                
-                with st.spinner("Uploading PDF to Gemini..."):
-                    pdf_file_obj = upload_pdf(tmp_path)
-                    st.session_state.gemini_file_obj = pdf_file_obj
-                    st.session_state.gemini_file_path = tmp_path
-                    st.session_state.last_uploaded_filename = uploaded_file.name
-                    st.success("PDF Uploaded to Gemini!")
-            else:
-                # File already processed, use cached object
-                pdf_file_obj = st.session_state.gemini_file_obj
-                # Optionally show a small message or just nothing to indicate readiness
-                st.sidebar.info(f"Using uploaded file: {uploaded_file.name}")
-        else:
-            st.warning("Please upload a PDF to use Gemini.")
-
-
-    # Helper function to get data based on selection
-    def get_data(prompt_text):
-        if model_choice == "Weaviate":
-            return get_weaviate_data(prompt_text)
-        elif model_choice == "Gemini":
-            if "gemini_file_obj" in st.session_state:
-                 return get_gemini_response(st.session_state.gemini_file_obj, prompt_text)
-            else:
-                st.error("No PDF uploaded for Gemini.")
-                return []
-        return []
-
-    # Step 1 — load series
-    if st.button("GET SERIES NAMES"):
-        # Use dynamic prompt
-        index_prompt = st.session_state.prompts.get("prompt_index", "")
-        data = get_data(index_prompt)
-        if data:
-            st.session_state.series_list = [d["SERIES"] for d in data]
-            st.success("Series Loaded Successfully!")
-
-    # Step 2 & 3 — series selection
-    if "series_list" in st.session_state:
-        selected_series = st.selectbox("Select a Series", st.session_state.series_list)
-
-        if st.button("Submit Series Selection"):
-            st.session_state.step3_done = True
-            st.session_state.selected_series_name = selected_series # Store to use later
-            st.toast("Thank you! Series selected 🎉")
-
-
-    # Step 4 — Dynamic Product Options
-    if st.session_state.get("step3_done", False):
-
-        st.subheader("Select Product Details")
-        
-        # Use stored series name
-        current_series = st.session_state.get("selected_series_name", "")
-
-        # Clean up previous session state if series changed (optional logic, kept simple for now)
-        # Use dynamic prompt with formatting
-        raw_options_prompt = st.session_state.prompts.get("prompt_test", "")
-        try:
-             options_prompt = raw_options_prompt.format(series_name=current_series)
-        except Exception as e:
-             st.error(f"Error formatting prompt: {e}")
-             options_prompt = raw_options_prompt # Fallback
-
-        
-        # Only fetch options if not already in session state OR if we want to refresh relative to the series
-        if "dynamic_options" not in st.session_state:
-             st.session_state.dynamic_options = get_data(options_prompt)
-        
-        # Store user selections here
-        if "product_selections" not in st.session_state:
-            st.session_state.product_selections = {}
-
-        # Generate UI dynamically
-        if st.session_state.dynamic_options:
-            for key, values in st.session_state.dynamic_options.items():
-                user_choice = st.selectbox(f"Select {key}", values, key=f"dyn_{key}")
-                st.session_state.product_selections[key] = user_choice
-
-            # Submit
-            if st.button("Submit Product Selection"):
-                with st.spinner("Processing your selection... ⏳ Please wait..."):
-                    time.sleep(2) # Fake processing delay from original code
-
-                st.session_state.product_done = True
-                st.success("🎉 Product details submitted successfully!")
-        else:
-            st.warning("Could not load options. Please try again.")
-
-
-    # Step 5 — Price display
-    if st.session_state.get("product_done", False):
-
-        st.subheader("Price Details")
-        current_series = st.session_state.get("selected_series_name", "")
-        
-        # user selections string representation
-        selection_str = str(st.session_state.product_selections)
-        
-        raw_price_prompt = st.session_state.prompts.get("price_prompt", "")
-        try:
-            pricePrompt = raw_price_prompt.format(series=current_series, selection=selection_str)
-        except Exception as e:
-             st.error(f"Error formatting price prompt: {e}")
-             pricePrompt = raw_price_prompt
-
-        price_list = get_data(pricePrompt)
-        
-        if price_list:
-            try:
-                # Handle potential variation in response structure between Weaviate/Gemini if any
-                price = price_list[0]["price"]
-                st.info(f"💰 Final Price Based on Your Selection: **{price}**")
-            except (IndexError, KeyError, TypeError):
-                 st.error(f"Could not extract price from response: {price_list}")
-        else:
-            st.error("No price data returned.")
-
-        # Also show user’s choices (optional)
-        st.write("Your Selections:", st.session_state.product_selections)
-
+# Step 1: Upload PDF
+if not st.session_state.upload_completed:
+    uploaded_file = st.file_uploader("Upload Pricebook PDF", type=['pdf'], key="uploader")
     
+    if uploaded_file is not None:
+        with st.spinner("Uploading and processing PDF..."):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_path = tmp_file.name
+            
+            try:
+                st.session_state.sample_file = upload_pdf(tmp_path)
+                st.session_state.upload_completed = True
+                st.success("PDF Uploaded Successfully!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error during upload: {e}")
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+# Step 2: Get Series
+if st.session_state.upload_completed and st.session_state.series_data is None:
+    st.info("Upload complete. Ready to extract series names.")
+    if st.button("Get Series"):
+        with st.spinner("Extracting series details..."):
+            try:
+                p_config = st.session_state.current_prompts['toc_prompt']
+                toc_prompt = p_config['prompt'] + "\nExample: " + json.dumps(p_config['example'])
+                st.session_state.series_data = get_gemini_response(st.session_state.sample_file, toc_prompt)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error getting series: {e}")
+
+# Step 3: Select Series and Get Parameters
+if st.session_state.series_data:
+    st.success("Series names extracted!")
+    
+    series_list = [item['SERIES'] for item in st.session_state.series_data if 'SERIES' in item]
+    selected_series = st.selectbox("Select a Series", options=series_list, key="series_selector")
+    
+    if 'base_parameters' not in st.session_state:
+        st.session_state.base_parameters = None
+    if 'additional_parameters' not in st.session_state:
+        st.session_state.additional_parameters = None
+
+    if st.button("Get Parameters"):
+        with st.spinner(f"Extracting parameters for {selected_series}..."):
+            try:
+                # Get Base Parameters
+                base_config = st.session_state.current_prompts['base_parameter_prompt']
+                base_prompt = base_config['prompt'].format(series_name=selected_series)
+                base_prompt += "\nExample: " + json.dumps(base_config['example'])
+                st.session_state.base_parameters = get_gemini_response(st.session_state.sample_file, base_prompt)
+                
+                # Get Additional Parameters
+                add_config = st.session_state.current_prompts['additional_parameter_prompt']
+                additional_prompt = add_config['prompt'].format(series_name=selected_series)
+                additional_prompt += "\nExample: " + json.dumps(add_config['example'])
+                st.session_state.additional_parameters = get_gemini_response(st.session_state.sample_file, additional_prompt)
+                
+                st.success(f"Parameters extracted for {selected_series}!")
+            except Exception as e:
+                st.error(f"Error getting parameters: {e}")
+
+# Step 4: Display Parameter Options
+if st.session_state.get('base_parameters') or st.session_state.get('additional_parameters'):
+    st.write("---")
+    st.write(f"### Configuration for {st.session_state.get('series_selector')}")
+    
+    col1, col2 = st.columns(2)
+    selections = {}
+    
+    with col1:
+        if st.session_state.base_parameters:
+            st.write("#### Base Parameters")
+            for param, options in st.session_state.base_parameters.items():
+                val = st.selectbox(f"Select {param}", options=options, key=f"base_{param}")
+                selections[param] = val
+                
+    with col2:
+        if st.session_state.additional_parameters:
+            st.write("#### Additional Parameters")
+            for param, options in st.session_state.additional_parameters.items():
+                val = st.selectbox(f"Select {param}", options=options, key=f"add_{param}")
+                selections[param] = val
+
+    if st.button("Get Price"):
+        with st.spinner("Calculating price and validating configuration..."):
+            try:
+                selection_text = json.dumps(selections, indent=2)
+                
+                price_config = st.session_state.current_prompts['price_prompt']
+                price_prompt = price_config['prompt'].format(
+                    series=st.session_state.get('series_selector'),
+                    selection=selection_text
+                )
+                price_prompt += "\nExample: " + json.dumps(price_config['example'])
+                
+                price_response = get_gemini_response(st.session_state.sample_file, price_prompt)
+                
+                if isinstance(price_response, list) and len(price_response) > 0:
+                    result = price_response[0]
+                else:
+                    result = price_response
+
+                if result.get('is_valid'):
+                    st.balloons()
+                    st.metric("Final Price", f"${result.get('price')}")
+                    st.success("Configuration is valid!")
+                else:
+                    st.error(f"Configuration Invalid: {result.get('reason')}")
+                    st.warning("Please adjust your selections.")
+                    
+            except Exception as e:
+                st.error(f"Error calculating price: {e}")
