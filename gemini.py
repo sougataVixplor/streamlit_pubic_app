@@ -5,8 +5,10 @@ import pathlib
 import httpx
 import json
 
+gemini_key=os.environ["GEMINI_API_KEY"]
 
-client = genai.Client(api_key="AIzaSyBUuHznqkOzK4yrNiqFnVsbj-EIf3Zbfco")
+client = genai.Client(api_key=gemini_key)
+
 
 # Retrieve and encode the PDF byte
 def upload_pdf(file):
