@@ -113,7 +113,7 @@ if st.session_state.upload_completed and st.session_state.series_data is None:
             except Exception as e:
                 st.error(f"Error getting series: {e}")
 
-# Step 3: Select Series and Get Parameters
+# Step 3: Select Series and Get Base Parameters
 if st.session_state.series_data:
     st.success("Series names extracted!")
     
@@ -124,52 +124,68 @@ if st.session_state.series_data:
         st.session_state.base_parameters = None
     if 'additional_parameters' not in st.session_state:
         st.session_state.additional_parameters = None
+    if 'base_selections' not in st.session_state:
+        st.session_state.base_selections = {}
 
-    if st.button("Get Parameters"):
-        with st.spinner(f"Extracting parameters for {selected_series}..."):
+    if st.button("Get Base Parameters"):
+        with st.spinner(f"Extracting base parameters for {selected_series}..."):
             try:
-                # Get Base Parameters
                 base_config = st.session_state.current_prompts['base_parameter_prompt']
                 base_prompt = base_config['prompt'].format(series_name=selected_series)
                 base_prompt += "\nExample: " + json.dumps(base_config['example'])
                 st.session_state.base_parameters = get_gemini_response(st.session_state.sample_file, base_prompt)
-                
-                # Get Additional Parameters
+                st.session_state.additional_parameters = None # Reset additional on new base fetch
+                st.session_state.base_selections = {}
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error getting base parameters: {e}")
+
+# Step 4: Display Base Parameters and Fetch Additional
+if st.session_state.get('base_parameters'):
+    st.write("---")
+    st.write(f"### Core Configuration for {st.session_state.get('series_selector')}")
+    
+    # Store selections in a temp dict to ensure they are captured before the "Get Additional" button is clicked
+    current_base_selections = {}
+    cols = st.columns(3)
+    for i, (param, options) in enumerate(st.session_state.base_parameters.items()):
+        with cols[i % 3]:
+            val = st.selectbox(f"Select {param}", options=options, key=f"base_ui_{param}")
+            current_base_selections[param] = val
+    
+    if st.button("Get Additional Parameters"):
+        st.session_state.base_selections = current_base_selections
+        with st.spinner(f"Extracting additional parameters for your selection..."):
+            try:
                 add_config = st.session_state.current_prompts['additional_parameter_prompt']
-                additional_prompt = add_config['prompt'].format(series_name=selected_series)
+                additional_prompt = add_config['prompt'].format(
+                    series_name=st.session_state.get('series_selector'),
+                    base_selections=json.dumps(st.session_state.base_selections, indent=2)
+                )
                 additional_prompt += "\nExample: " + json.dumps(add_config['example'])
                 st.session_state.additional_parameters = get_gemini_response(st.session_state.sample_file, additional_prompt)
-                
-                st.success(f"Parameters extracted for {selected_series}!")
+                st.rerun()
             except Exception as e:
-                st.error(f"Error getting parameters: {e}")
+                st.error(f"Error getting additional parameters: {e}")
 
-# Step 4: Display Parameter Options
-if st.session_state.get('base_parameters') or st.session_state.get('additional_parameters'):
+# Step 5: Display Additional Parameters and Get Final Price
+if st.session_state.get('additional_parameters'):
     st.write("---")
-    st.write(f"### Configuration for {st.session_state.get('series_selector')}")
+    st.write("### Additional Configuration")
     
-    col1, col2 = st.columns(2)
-    selections = {}
-    
-    with col1:
-        if st.session_state.base_parameters:
-            st.write("#### Base Parameters")
-            for param, options in st.session_state.base_parameters.items():
-                val = st.selectbox(f"Select {param}", options=options, key=f"base_{param}")
-                selections[param] = val
-                
-    with col2:
-        if st.session_state.additional_parameters:
-            st.write("#### Additional Parameters")
-            for param, options in st.session_state.additional_parameters.items():
-                val = st.selectbox(f"Select {param}", options=options, key=f"add_{param}")
-                selections[param] = val
+    current_additional_selections = {}
+    cols = st.columns(3)
+    for i, (param, options) in enumerate(st.session_state.additional_parameters.items()):
+        with cols[i % 3]:
+            val = st.selectbox(f"Select {param}", options=options, key=f"add_ui_{param}")
+            current_additional_selections[param] = val
 
-    if st.button("Get Price"):
-        with st.spinner("Calculating price and validating configuration..."):
+    if st.button("Calculate Final Price"):
+        with st.spinner("Calculating final price and validating configuration..."):
             try:
-                selection_text = json.dumps(selections, indent=2)
+                # Combine all selections
+                all_selections = {**st.session_state.base_selections, **current_additional_selections}
+                selection_text = json.dumps(all_selections, indent=2)
                 
                 price_config = st.session_state.current_prompts['price_prompt']
                 price_prompt = price_config['prompt'].format(
@@ -189,9 +205,11 @@ if st.session_state.get('base_parameters') or st.session_state.get('additional_p
                     st.balloons()
                     st.metric("Final Price", f"${result.get('price')}")
                     st.success("Configuration is valid!")
+                    st.info(f"Summary: {result.get('reason', 'Matching configuration found.')}")
                 else:
                     st.error(f"Configuration Invalid: {result.get('reason')}")
                     st.warning("Please adjust your selections.")
                     
             except Exception as e:
                 st.error(f"Error calculating price: {e}")
+

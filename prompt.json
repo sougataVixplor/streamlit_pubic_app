@@ -26,7 +26,7 @@
         }
     },
     "additional_parameter_prompt": {
-        "prompt": "Analyze the {series_name} series from the provided PDF to locate its additional price table. \n(Additional price means the price of the additional configuration of a product for the selected series.)\nYour task is to extract the additional configuration/specification parameters from this additional price table, along with all possible/available options for each parameter. \nWhen extracting these parameters, group and consolidate them intelligently to simplify the data hierarchy, reduce redundancy or confusion in the data, and carefully maintain any interdependencies between parameters and their options.\nReturn the result strictly in the following JSON format:",
+        "prompt": "Analyze the {series_name} series from the provided PDF to locate its additional price table. \n(Additional price means the price of the additional configuration of a product for the selected series.)\n\nContext: The user has already selected the following core configuration:\n{base_selections}\n\nYour task is to extract the additional configuration/specification parameters that are applicable or available for this specific core configuration from the additional price table, along with all possible/available options for each parameter. \nWhen extracting these parameters, group and consolidate them intelligently to simplify the data hierarchy, reduce redundancy or confusion in the data, and carefully maintain any interdependencies between parameters and their options.\nReturn the result strictly in the following JSON format:",
         "example": {
             "Additional_Parameter_1": [
                 "Option_1",
